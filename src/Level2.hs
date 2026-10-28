@@ -43,6 +43,7 @@ import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Ord (Down (..))
 import MetaUtils (todo, todoImpl)
+import Data.Function ((&))
 
 
 -- 2.1. Специализированные свёртки.
@@ -60,7 +61,7 @@ foldNat z s = \case
 -- Без сопоставления с образцом и явной рекурсии.
 
 sumOrLength :: Either (Nat, Nat) String -> Nat
-sumOrLength = todo "2.1"
+sumOrLength e = either (\(a, b) -> foldNat a S b) (foldr (const S) Z) e
 
 
 -- 2.2. Реализуйте map через unfoldr, не конструируя результат через [] и (:).
@@ -68,7 +69,12 @@ sumOrLength = todo "2.1"
 -- take 3 (map' (+1) [1..]) == [2,3,4].
 
 map' :: (a -> b) -> [a] -> [b]
-map' = todo "2.2"
+map' f =
+  unfoldr
+    ( \list -> case list of
+        [] -> Nothing
+        x : xs -> Just (f x, xs)
+    )
 
 
 -- 2.3. Разное: словарь как частичная функция.
@@ -79,19 +85,19 @@ map' = todo "2.2"
 newtype MyMap k v = MyMap { myLookup :: k -> Maybe v }
 
 myEmpty :: MyMap k v
-myEmpty = todo "2.3 пустой словарь"
+myEmpty = MyMap (const Nothing)
 
 myInsert :: Eq k => k -> v -> MyMap k v -> MyMap k v
-myInsert = todo "2.3 вставка"
+myInsert k v m = MyMap (\k' -> if (k' == k) then Just v else (myLookup m) k')
 
 myInsertMany :: (Eq k, Foldable t) => MyMap k v -> t (k, v) -> MyMap k v
-myInsertMany = todo "2.3 массовая вставка"
+myInsertMany = foldl' (flip (uncurry myInsert))
 
 myDelete :: Eq k => k -> MyMap k v -> MyMap k v
-myDelete = todo "2.3 удаление"
+myDelete k m = MyMap (\k' -> if (k' == k) then Nothing else (myLookup m) k')
 
 myDeleteMany :: (Eq k, Foldable t) => MyMap k v -> t k -> MyMap k v
-myDeleteMany = todo "2.3 массовое удаление"
+myDeleteMany = foldr myDelete
 
 
 -- 2.4. Напишите полные инстансы Semigroup и Monoid.
@@ -99,15 +105,31 @@ myDeleteMany = todo "2.3 массовое удаление"
 -- Ограничения на тип значения не нужны: значения не объединяются.
 -- Нейтральный элемент — словарь, возвращающий Nothing для любого ключа.
 
-todoImpl ''Semigroup ''MyMap
-todoImpl ''Monoid ''MyMap
+orElse :: (Maybe a) -> (Maybe a) -> (Maybe a)
+orElse Nothing b = b
+orElse a _ = a
 
+instance Semigroup (MyMap a b) where
+  a <> b = MyMap (\k -> (myLookup a k) `orElse` (myLookup b k))
+
+instance Monoid (MyMap a b) where
+  mempty = myEmpty
 
 -- 2.5. Напишите полный Foldable (MyMap k) для (Enum k, Bounded k).
 -- Обходите ключи в порядке [minBound .. maxBound], пропуская Nothing.
 -- Каждый существующий ключ даёт одно значение, даже если значения равны.
 
-todoImpl ''Foldable ''MyMap
+instance (Enum k, Bounded k) => Foldable (MyMap k) where
+  foldr :: (Enum k, Bounded k) => (a -> b -> b) -> b -> MyMap k a -> b
+  foldr f z m =
+    foldr
+      ( \k' acc ->
+          case (myLookup m) k' of
+            Nothing -> acc
+            Just v -> f v acc
+      )
+      z
+      [minBound .. maxBound]
 
 
 -- 2.6. Разное: отформатируйте результат wordCount.
@@ -129,7 +151,12 @@ stdWcShow :: WordCountShow
 stdWcShow = WordCountShow { topSize = 10, smallWordsSize = 3 }
 
 wordCountShow :: WordCountShow -> Map String Int -> String
-wordCountShow = todo "2.6"
+wordCountShow params m =
+  Map.toList m
+    & filter (\(k, _) -> (length k) > smallWordsSize params)
+    & List.sortOn (\(k, v) -> (-v, k))
+    & take (topSize params)
+    & foldMap (\(k, v) -> k ++ " : " ++ show v ++ "\n")
 
 
 -- 2.7. Разное: сохраните значения Right в исходном порядке,
@@ -138,4 +165,4 @@ wordCountShow = todo "2.6"
 -- Конечный префикс результата должен работать на бесконечном входе.
 
 collectRights :: [Either e a] -> [a]
-collectRights = todo "2.7"
+collectRights = foldMap $ either (const []) (List.singleton)
